@@ -6,6 +6,8 @@ import itertools
 import collections
 import warnings
 
+from .utils import linear_sum_assignment_with_inf
+
 # The maximum allowable number of sources (prevents insane computational load)
 MAX_SOURCES = 100
 
@@ -190,13 +192,6 @@ def bss_eval(reference_sources, estimated_sources,
     # determine shape parameters
     (nsrc, nsampl, nchan) = estimated_sources.shape
 
-    # defines all the permutations desired by user
-    if compute_permutation:
-        candidate_permutations = np.array(list(
-            itertools.permutations(list(range(nsrc)))))
-    else:
-        candidate_permutations = np.array(np.arange(nsrc))[None, :]
-
     # initialize variables
     framer = Framing(window, hop, nsampl)
     nwin = framer.nwin
@@ -221,7 +216,7 @@ def bss_eval(reference_sources, estimated_sources,
     def compute_Cj(win=slice(0, nsampl)):
         Cj = np.zeros((nsrc, nsrc, 1, nchan, filters_len, nchan))
         for jtrue in range(nsrc):
-            for jest in candidate_permutations[:, jtrue]:
+            for jest in range(nsrc):
                 # compute the projection filters for this combination
                 Cj[jtrue, jest] = _compute_projection_filters(
                     G[jtrue, jtrue],
@@ -236,6 +231,7 @@ def bss_eval(reference_sources, estimated_sources,
         Cj = compute_Cj()
 
     # loop over all windows
+    is_silent_frame = np.zeros(nwin, dtype=np.bool)
     for (t, win) in enumerate(framer):
         # if we have time-varying distortion filters
         if framewise_filters:
@@ -251,7 +247,6 @@ def bss_eval(reference_sources, estimated_sources,
         ):
             for jtrue in range(nsrc):
                 for jest in range(nsrc):
-                    # if we have a silent frame set results as np.nan
                     s_true, e_spat, e_interf, e_artif = \
                         _bss_decomp_mtifilt(
                             reference_sources[:, win],
@@ -267,34 +262,41 @@ def bss_eval(reference_sources, estimated_sources,
                         bsseval_sources_version
                     )
         else:
+            # if we have a silent frame set results as np.nan
             a = np.empty((4, nsrc, nsrc))
             a[:] = np.nan
             s_r[:, :, :, t] = a
-
-    # select the best ordering
-    if framewise_filters:
-        # if we have framewise filters, output one permutation for each window
-        mean_sir = np.empty((len(candidate_permutations), nwin))
-        axis_mean = 0
-    else:
-        # otherwise, output one permutation for the whole signal as the best
-        # average one
-        mean_sir = np.empty((len(candidate_permutations), 1))
-        axis_mean = None
-    dum = np.arange(nsrc)
-    for (i, perm) in enumerate(candidate_permutations):
-        mean_sir[i] = np.mean(s_r[SIR, dum, perm, :], axis=axis_mean)
-    popt = candidate_permutations[np.argmax(mean_sir, axis=0)].T
+            is_silent_frame[t] = True
 
     # now prepare the output
-    if not framewise_filters:
-        result = s_r[:, dum, popt[:, 0], :]
-    else:
-        result = np.empty((4, nsrc, nwin))
-        for (m, t) in itertools.product(list(range(4)), list(range(nwin))):
-            result[m, :, t] = s_r[m, dum, popt[:, t], t]
+    result = np.empty((4, nsrc, nwin))
+    dum = popt = np.arange(nsrc)
+    all_permutations = []
+    for t in range(nwin):
+        if is_silent_frame[t]:
+            # If the frame is silent, we just fill the output
+            result[:, :, :, t] = np.nan
+            all_permutations.append(list(range(nsrc)))
+            # skip further processing
+            continue
 
-    return (result[SDR], result[ISR], result[SIR], result[SAR], popt)
+        # Find the permutation if requested
+        if compute_permutation:
+            dum, popt = linear_sum_assignment_with_inf(-s_r[SIR, :, :, t])
+
+        all_permutations.append(popt)
+
+        # Save the metrics
+        for m in range(4):
+            result[m, :, t] = s_r[m, dum, popt, t]
+
+    return (
+        result[SDR],
+        result[ISR],
+        result[SIR],
+        result[SAR],
+        np.array(all_permutations)
+    )
 
 
 def bss_eval_sources(reference_sources, estimated_sources,
