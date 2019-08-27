@@ -242,9 +242,7 @@ def bss_eval(reference_sources, estimated_sources,
             (G, sf, C) = compute_GsfC(win)
             Cj = compute_Cj(win)
 
-        # loop over all permutations
-        done = np.zeros((nsrc, nsrc))
-
+        # loop over all pairs
         ref_slice = reference_sources[:, win]
         est_slice = estimated_sources[:, win]
         if (
@@ -252,24 +250,22 @@ def bss_eval(reference_sources, estimated_sources,
             not _any_source_silent(est_slice)
         ):
             for jtrue in range(nsrc):
-                for (k, jest) in enumerate(candidate_permutations[:, jtrue]):
+                for jest in range(nsrc):
                     # if we have a silent frame set results as np.nan
-                    if not done[jtrue, jest]:
-                            s_true, e_spat, e_interf, e_artif = \
-                                _bss_decomp_mtifilt(
-                                    reference_sources[:, win],
-                                    estimated_sources[jest, win],
-                                    jtrue, C[jest],
-                                    Cj[jtrue, jest, 0]
-                                )
-                            s_r[:, jtrue, jest, t] = _bss_crit(
-                                s_true,
-                                e_spat,
-                                e_interf,
-                                e_artif,
-                                bsseval_sources_version
-                            )
-                            done[jtrue, jest] = True
+                    s_true, e_spat, e_interf, e_artif = \
+                        _bss_decomp_mtifilt(
+                            reference_sources[:, win],
+                            estimated_sources[jest, win],
+                            jtrue, C[jest],
+                            Cj[jtrue, jest, 0]
+                        )
+                    s_r[:, jtrue, jest, t] = _bss_crit(
+                        s_true,
+                        e_spat,
+                        e_interf,
+                        e_artif,
+                        bsseval_sources_version
+                    )
         else:
             a = np.empty((4, nsrc, nsrc))
             a[:] = np.nan
