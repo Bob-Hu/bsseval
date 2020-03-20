@@ -477,7 +477,7 @@ def _compute_reference_correlations(reference_sources, filters_len):
     sf = scipy.fftpack.fft(reference_sources, n=n_fft, axis=2)
 
     # compute intercorrelation between sources
-    G = np.zeros((nsrc, nsrc, nchan, nchan, filters_len, filters_len))
+    G = np.zeros((nsrc, nsrc, nchan, nchan, filters_len))
     for ((i, c1), (j, c2)) in itertools.combinations_with_replacement(
         itertools.product(
             list(range(nsrc)), list(range(nchan))
@@ -487,12 +487,8 @@ def _compute_reference_correlations(reference_sources, filters_len):
 
         ssf = sf[j, c2] * np.conj(sf[i, c1])
         ssf = np.real(scipy.fftpack.ifft(ssf))
-        ss = toeplitz(
-            np.hstack((ssf[0], ssf[-1:-filters_len:-1])),
-            r=ssf[:filters_len]
-        )
-        G[j, i, c2, c1] = ss
-        G[i, j, c1, c2] = ss.T
+        G[j, i, c2, c1] = ssf[:filters_len]
+        G[i, j, c1, c2] = np.hstack((ssf[0], ssf[-1:-filters_len:-1]))
     return G, sf
 
 
